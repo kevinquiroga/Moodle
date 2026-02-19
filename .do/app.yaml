@@ -1,8 +1,37 @@
-name: sample-dockerfile
 services:
-- dockerfile_path: Dockerfile
-  github:
-    branch: main
-    deploy_on_push: true
-    repo: digitalocean/sample-dockerfile
-  name: sample-dockerfile
+  db:
+    image: mariadb:11.2
+    environment:
+      MARIADB_ROOT_PASSWORD: moodle123
+      MARIADB_DATABASE: moodle
+      MARIADB_USER: moodleuser
+      MARIADB_PASSWORD: moodle123
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - moodle_net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  moodle:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - moodledata:/var/moodledata
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - moodle_net
+
+volumes:
+  db_data:
+  moodledata:
+
+networks:
+  moodle_net:
+    driver: bridge
