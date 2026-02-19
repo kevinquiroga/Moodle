@@ -1,24 +1,37 @@
-# This is a standard Dockerfile for building a Go app.
-# It is a multi-stage build: the first stage compiles the Go source into a binary, and
-#   the second stage copies only the binary into an alpine base.
+FROM php:8.1-apache
 
-# -- Stage 1 -- #
-# Compile the app.
-FROM golang:1.22-alpine as builder
-WORKDIR /app
-# The build context is set to the directory where the repo is cloned.
-# This will copy all files in the repo to /app inside the container.
-# If your app requires the build context to be set to a subdirectory inside the repo, you
-#   can use the source_dir app spec option, see: https://www.digitalocean.com/docs/app-platform/references/app-specification-reference/
-COPY . .
-RUN go build -mod=vendor -o bin/hello
+ENV DEBIAN_FRONTEND=noninteractive
 
-# -- Stage 2 -- #
-# Create the final environment with the compiled binary.
-FROM alpine:3.20
-# Install any required dependencies.
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-# Copy the binary from the builder stage and set it as the default command.
-COPY --from=builder /app/bin/hello /usr/local/bin/
-CMD ["hello"]
+# Instalar dependencias
+RUN apt-get update && apt-get install -y \
+    git curl unzip \
+    libicu-dev libpng-dev libjpeg-dev libfreetype6-dev \
+    libxml2-dev libzip-dev libonig-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar extensiones PHP
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
+    docker-php-ext-install -j$(nproc) gd intl mysqli pdo_mysql opcache zip soap mbstring exif
+
+# Descargar Moodle
+RUN cd /tmp && \
+    curl -fSL https://download.moodle.org/download.php/direct/stable404/moodle-4.4.tgz -o moodle.tgz && \
+    tar -xzf moodle.tgz -C /var/www/html --strip-components=1 && \
+    rm moodle.tgz
+
+# Crear directorio de datos
+RUN mkdir -p /var/moodledata && \
+    chown -R www-data:www-data /var/www/html /var/moodledata && \
+    chmod -R 755 /var/www/html && \
+    chmod -R 777 /var/moodledata
+
+# Configurar PHP
+RUN echo "max_input_vars = 5000" >> /usr/local/etc/php/conf.d/moodle.ini && \
+    echo "upload_max_filesize = 200M" >> /usr/local/etc/php/conf.d/moodle.ini && \
+    echo "post_max_size = 200M" >> /usr/local/etc/php/conf.d/moodle.ini && \
+    echo "memory_limit = 256M" >> /usr/local/etc/php/conf.d/moodle.ini
+
+# Habilitar mod_rewrite
+RUN a2enmod rewrite
+
+WORKDIR /var/www/html
